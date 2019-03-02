@@ -1,7 +1,7 @@
 var locked = false;
 var vconfirm = 0;
 
-Module.register("MMM-Serial-Connector", {
+Module.register("MMM-Serial-Navigator", {
   defaults: {
     menuTimeout: 5000,
     serialDev: '/dev/ttyUSB0',
@@ -9,12 +9,13 @@ Module.register("MMM-Serial-Connector", {
     dataBits: 8,
     parity: 'none',
     stopBits: 1,
-    flowControl: false
+    flowControl: false,
+    serialCodes:[ "CW", "CCW", "BTN2", "SW", "BTN1" ]
   },
 
 	getStyles: function() {
     return [
-      this.file('MMM-Serial-Connector.css'), //load css
+      this.file('MMM-Serial-Navigator.css'), //load css
     ];
   },
 
@@ -24,13 +25,13 @@ Module.register("MMM-Serial-Connector", {
     var currentTimeoutID = self.config.activeTimeoutID;
     setTimeout(function() {
       if(self.config.activeTimeoutID == currentTimeoutID){
-        self.hide(10, { lockString: "MMM-Serial-Connector" });
+        self.hide(10, { lockString: "MMM-Serial-Navigator" });
       }
     }, self.config.menuTimeout);
   },
 
   sendAction: function(description) {
-    this.show(0,{force: true, lockString: "MMM-Serial-Connector" });
+    this.show(0,{force: true, lockString: "MMM-Serial-Navigator" });
 
     if((description.payload.action == "SHUTDOWN"
 					|| description.payload.action == "RESTART"
@@ -88,7 +89,8 @@ Module.register("MMM-Serial-Connector", {
 
 	naviaction: function(payload){
     var self = this;
-    if(payload.inputtype === 'CW' || payload.inputtype === 'CCW' || payload.inputtype === 'PRESSED' || payload.inputtype === 'SW'){
+    if(self.config.serialCodes.indexOf(payload.inputtype) != -1){
+    //if(payload.inputtype === 'CW' || payload.inputtype === 'CCW' || payload.inputtype === 'PRESSED' || payload.inputtype === 'SW'){
       navigationmove(payload.inputtype);
       self.hideAfterTimeout();
     }
@@ -105,15 +107,15 @@ Module.register("MMM-Serial-Connector", {
     }
 				
     function navigationmove(input){
-      self.show(0, {lockString: "MMM-Serial-Connector"});
+      self.show(0, {lockString: "MMM-Serial-Navigator"});
       selectedid = fselectedid();
-      if(input==='CW' || input==='CCW'){
+      if(input===self.config.serialCodes[0] || input===self.config.serialCodes[1]){
         vconfirm = 0;
 
-        if(input==='CW'){
+        if(input===self.config.serialCodes[0]){
           navistep = 1;
           actionstep = 0;
-        }else if(input==='CCW'){
+        }else if(input===self.config.serialCodes[1]){
           navistep = -1;
           actionstep = 1;
         }
@@ -122,35 +124,45 @@ Module.register("MMM-Serial-Connector", {
           self.sendAction(self.config.Action[selectedid][parseInt(actionstep)]);
         }else if(locked==false){
           document.getElementsByTagName('li')[selectedid].setAttribute('class', '');//CW&CCW
-          if(selectedid==0 && input==='CW'){//mark next row
+          if(selectedid==0 && input===self.config.serialCodes[0]){//mark next row
             document.getElementsByTagName('li')[parseInt(selectedid)+1].setAttribute('class', 'selected');//CW
-          }else if(selectedid==0 && input==='CCW'){//mark last row
+          }else if(selectedid==0 && input===self.config.serialCodes[1]){//mark last row
             document.getElementsByTagName('li')[self.config.Action.length-1].setAttribute('class', 'selected');//CCW
-          }else if(selectedid==self.config.Action.length-1 && input==='CW'){//mark first row
+          }else if(selectedid==self.config.Action.length-1 && input===self.config.serialCodes[0]){//mark first row
             document.getElementsByTagName('li')[0].setAttribute('class', 'selected');//CW
-          }else if(selectedid==self.config.Action.length-1 && input==='CCW'){//mark prev row
+          }else if(selectedid==self.config.Action.length-1 && input===self.config.serialCodes[1]){//mark prev row
             document.getElementsByTagName('li')[parseInt(selectedid)-1].setAttribute('class', 'selected');//CCW
           }else{//mark next one in selected direction
             document.getElementsByTagName('li')[parseInt(selectedid)+navistep].setAttribute('class', 'selected');
           }
         }
-      }else if(input === 'PRESSED'){
+      }else if(input === self.config.serialCodes[2]){
         if(locked==false){//Menu not locked so ... (see below)
           if(Array.isArray(self.config.Action[selectedid])){//if selected entry Action is array - lock it
             locked = true;
             document.getElementsByTagName('li')[selectedid].setAttribute('class', 'selected locked fa-lock1');//axled lock icon
           }else{//if selected entry Action is object - so there is nothing to lock - execute it
-            self.show(0,{force: true, lockString: "MMM-Serial-Connector"});
+            self.show(0,{force: true, lockString: "MMM-Serial-Navigator"});
             self.sendAction(self.config.Action[selectedid]);
           }
         }else{//Menu locked so unlock it
           locked = false;
           document.getElementsByTagName('li')[selectedid].setAttribute('class', 'selected');
         }
-      } else if(input === 'SW'){
+      /*} else if(input === 'SW'){
         if(locked==true){
           if(self.config.Action[selectedid].length >= 3){
             self.sendAction(self.config.Action[selectedid][2]);
+          }
+        }
+      }*/
+      } else {
+        if(locked==true){
+          var index = self.config.serialCodes.indexOf(input);
+          if(index > 1) index--;
+          Log.log("code: "+input+"("+index+") / "+self.config.Action[selectedid].length);
+          if(index < self.config.Action[selectedid].length){
+            self.sendAction(self.config.Action[selectedid][index]);
           }
         }
       }
@@ -162,21 +174,24 @@ Module.register("MMM-Serial-Connector", {
   // socketNotificationReceived from helper
   socketNotificationReceived: function (notification, payload) {
     Log.info("SocketNOtification: " + notification);
-    if(notification === 'BTN2'){
-      this.naviaction({inputtype: ""+"PRESSED"+""});
-    } else if(notification === 'CW'){
-      this.naviaction({inputtype: ""+"CW"+""});
-    } else if(notification === 'CCW'){
-      this.naviaction({inputtype: ""+"CCW"+""});
-    } else if(notification === 'SW'){
-      this.naviaction({inputtype: ""+"SW"+""});
+    if(this.config.serialCodes.indexOf(notification) != -1){
+      this.naviaction({inputtype: notification});
     }
+    /*if(notification === 'BTN2'){
+      this.naviaction({inputtype: "PRESSED"});
+    } else if(notification === 'CW'){
+      this.naviaction({inputtype: "CW"});
+    } else if(notification === 'CCW'){
+      this.naviaction({inputtype: "CCW"});
+    } else if(notification === 'SW'){
+      this.naviaction({inputtype: "SW"});
+    }*/
   },
 
   notificationReceived: function(notification, payload, sender){
     //Log.info("############### Serial Connector got notification: " + notification+" by sender " + sender);
     if(notification === 'DOM_OBJECTS_CREATED'){
-      this.hide(10, { lockString: "MMM-Serial-Connector" });
+      this.hide(10, { lockString: "MMM-Serial-Navigator" });
     }
   },
 });

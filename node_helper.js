@@ -29,8 +29,8 @@ module.exports = NodeHelper.create({
       serial_listener = self.serialport.on("open",function () {
         self.parser.on('data', function(data) {
           action = data;
-
-          if(action=='CW' || action=='CCW' || action=='SW' || action=='BTN1' || action=='BTN2'){
+          
+          if(self.config.serialCodes.indexOf(action) != -1){
             //console.log('send notification from helper to Serial Connector');
             self.sendSocketNotification(action,{inputtype: ""+action+""});
           }
