@@ -1,0 +1,12 @@
+{
+  "name": "MagicMirror-Serial-Navigator",
+  "version": "1.0.0",
+  "main": "MMM-Serial-Navigator.js",
+  "scripts": {
+    "install": "electron-rebuild"
+  },
+  "dependencies": {
+    "serialport": "6.2.2",
+    "electron-rebuild": "latest"
+  }
+}
