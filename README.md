@@ -339,3 +339,28 @@ Furthermore you have to specify the notification and it's payload (optional).
 		</tr>
 	</tbody>
 </table>
+
+
+## Notifications
+
+The module can receive the following notifications.
+
+<table width="100%">
+	<!-- why, markdown... -->
+	<thead>
+		<tr>
+			<th>Option</th>
+			<th width="100%">Description</th>
+		</tr>
+	<thead>
+	<tbody>
+		<tr>
+			<td><code>WRITE_TO_SERIAL</code></td>
+			<td>Sends data over the serial interface to the client. The payload has to contain the key
+        <ul>
+          <li> data   (String)
+        </ul>
+			</td>
+		</tr>
+	</tbody>
+</table>
