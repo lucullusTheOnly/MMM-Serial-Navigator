@@ -30,8 +30,7 @@ module.exports = NodeHelper.create({
         self.parser.on('data', function(data) {
           action = data;
           
-          if(self.config.serialCodes.indexOf(action) != -1){
-            //console.log('send notification from helper to Serial Connector');
+          if(self.serialCodes.indexOf(action) != -1){
             self.sendSocketNotification(action,{inputtype: ""+action+""});
           }
         });
@@ -41,11 +40,19 @@ module.exports = NodeHelper.create({
 	
 	// Override socketNotificationReceived method.
   socketNotificationReceived: function(notification, payload) {
-    if (notification === 'START') {
-      this.sendSocketNotification('MSG', {message: 'test'});
-    }else if (notification === 'INITIALIZE') {
-      this.config = payload.config;
-      this.initialize();
+    switch(notification){
+      case 'INITIALIZE':
+        this.config = payload.config;
+        this.serialCodes = payload.serialCodes;
+        this.initialize();
+        break;
+      case 'WRITE_TO_SERIAL':
+        this.serialport.write(payload.data+"\n", function(err) {
+          if (err) {
+            return console.log('Error on write: ', err.message)
+          }
+        });
+        break;
     }
   }
 });

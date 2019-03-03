@@ -3,6 +3,7 @@ var vconfirm = 0;
 
 Module.register("MMM-Serial-Navigator", {
   defaults: {
+    hideMenu: false,
     menuTimeout: 5000,
     serialDev: '/dev/ttyUSB0',
     baudrate: 9600,
@@ -10,10 +11,88 @@ Module.register("MMM-Serial-Navigator", {
     parity: 'none',
     stopBits: 1,
     flowControl: false,
-    serialCodes:[ "CW", "CCW", "BTN2", "SW", "BTN1" ]
+    serialCodes:[ "CW", "CCW", "SW", "BTN1" ],
+    states: [
+      'Change Profile',
+      'News Feed',
+      'Test notification',
+      'Restart MagicMirror (PM2)',
+      'Restart',
+      'Shutdown'
+    ],
+    actions: [
+      {
+        serialCode: "CW",
+        menuAction: "next",
+        notifications: [
+          {
+            state: 'Change Profile',
+            notification: 'CAROUSEL_NEXT',
+            payload: ''
+          },
+          {
+            state: 'News Feed',
+            notification: 'ARTICLE_NEXT',
+            payload: ''
+          }
+        ]
+      },
+      {
+        serialCode: "CCW",
+        menuAction: "previous",
+        notifications: [
+          {
+            state: 'Change Profile',
+            notification: 'CAROUSEL_PREVIOUS',
+            payload: ''
+          },
+          {
+            state: 'News Feed',
+            notification: 'ARTICLE_PREVIOUS',
+            payload: ''
+          }
+        ]
+      },
+      {
+        serialCode: "SW",
+        menuAction: "lock",
+        notifications: [
+          {
+            state: 'Test notification',
+            notification: 'SHOW_ALERT',
+            payload: { type: "notification", message: "This is a test message."}
+          },
+          {
+            state: 'Restart MagicMirror (PM2)',
+            notification: 'REMOTE_ACTION',
+            payload: {action: "RESTART"}
+          },
+          {
+            state: 'Restart',
+            notification: 'REMOTE_ACTION',
+            payload: {action: "REBOOT"}
+          },
+          {
+            state: 'Shutdown',
+            notification: 'REMOTE_ACTION',
+            payload: {action: "SHUTDOWN"}
+          }
+        ]
+      },
+      {
+        serialCode: "BTN1",
+        notifications: [
+          {
+            state: 'News Feed',
+            notification: 'ARTICLE_TOGGLE_FULL',
+            payload: ''
+          }
+        ]
+      }
+    ]
   },
 
-	getStyles: function() {
+  getStyles: function() {
     return [
       this.file('MMM-Serial-Navigator.css'), //load css
     ];
@@ -30,9 +109,41 @@ Module.register("MMM-Serial-Navigator", {
     }, self.config.menuTimeout);
   },
 
-  sendAction: function(description) {
-    this.show(0,{force: true, lockString: "MMM-Serial-Navigator" });
+  getAction: function(serialCode, state, stateless=false){
+    var self=this;
+    for(var i=0;i<self.config.actions.length;i++){
+      if(self.config.actions[i].serialCode == serialCode){
+        var menuaction = "";
+        if(self.config.actions[i].menuAction !== undefined){
+          menuaction = self.config.actions[i].menuAction;
+        }
+        for(var j=0;j<self.config.actions[i].notifications.length;j++){
+          if(self.config.actions[i].notifications[j].state != undefined && self.config.actions[i].notifications[j].state == state){
+            return { menuAction:menuaction,
+              notification: self.config.actions[i].notifications[j].notification,
+              payload: self.config.actions[i].notifications[j].payload
+            };
+          }
+        }
+        if(stateless){
+          for(var j=0;j<self.config.actions[i].notifications.length;j++){
+            if(self.config.actions[i].notifications[j].state == undefined){
+              return { menuAction: menuaction,
+                notification: self.config.actions[i].notifications[j].notification,
+                payload: self.config.actions[i].notifications[j].payload
+              };
+            }
+          }
+        }
+        return {menuAction: menuaction};
+      }
+    }
+  },
 
+  sendAction: function(description) {
+    if(!this.config.hideMenu) this.show(0,{force: true, lockString: "MMM-Serial-Navigator" });
+
+    if(description.payload == undefined) description.payload = {};
     if((description.payload.action == "SHUTDOWN"
 					|| description.payload.action == "RESTART"
 					|| description.payload.action == "REBOOT")
@@ -48,8 +159,23 @@ Module.register("MMM-Serial-Navigator", {
   start: function() {
     Log.info("Starting module: " + this.name);
     this.config.current_status = "DESCRIPTION";
+    this.serialCodes = [];
+    this.menuactionCodes = {next: '', previous: '', lock: ''};
+    for(var i=0;i<this.config.actions.length;i++){
+      this.serialCodes.push(this.config.actions[i].serialCode);
+      if(this.config.actions[i].menuAction === "next"){
+        this.menuactionCodes.next = this.config.actions[i].serialCode;
+      } else if(this.config.actions[i].menuAction === "previous"){
+        this.menuactionCodes.previous = this.config.actions[i].serialCode;
+      } else if(this.config.actions[i].menuAction === "lock"){
+        this.menuactionCodes.lock = this.config.actions[i].serialCode;
+      }
+    }
+    this.stateselected = 0;
+    this.state = "GROUND_STATE";
     this.sendSocketNotification("INITIALIZE", {
-      config: this.config
+      config: this.config,
+      serialCodes: this.serialCodes
     });
     this.config.activeTimeoutID = 0;
   },
@@ -72,11 +198,11 @@ Module.register("MMM-Serial-Navigator", {
         parent.className = "xsmall bright";
 
     //build navigation from array
-    for (let index = 0; index < this.config.Action.length; index++) {
+    for (let index = 0; index < this.config.states.length; index++) {
       var naviItem = document.createElement("li");
       var link = document.createElement('a');
       link.setAttribute('href', '');
-      link.innerHTML = this.config.Alias[index];
+      link.innerHTML = this.config.states[index];
       naviItem.setAttribute('id', index);
       if(index==0){ //first li gets class="selected"
         naviItem.setAttribute('class', 'selected');
@@ -89,14 +215,13 @@ Module.register("MMM-Serial-Navigator", {
 
 	naviaction: function(payload){
     var self = this;
-    if(self.config.serialCodes.indexOf(payload.inputtype) != -1){
-    //if(payload.inputtype === 'CW' || payload.inputtype === 'CCW' || payload.inputtype === 'PRESSED' || payload.inputtype === 'SW'){
+    if(self.serialCodes.indexOf(payload.inputtype) != -1){
       navigationmove(payload.inputtype);
       self.hideAfterTimeout();
     }
 
     function fselectedid(){//get ID and return it
-      for (let index = 0; index < self.config.Action.length; index++) {
+      for (let index = 0; index < self.config.states.length; index++) {
         var test = document.getElementsByTagName('li')[index].getAttribute('class');
 
         if(test=='selected' || test=='selected locked' || test=='selected locked fa-lock1'){//axled lock icon
@@ -107,63 +232,60 @@ Module.register("MMM-Serial-Navigator", {
     }
 				
     function navigationmove(input){
-      self.show(0, {lockString: "MMM-Serial-Navigator"});
+      if(!self.config.hideMenu) self.show(0, {lockString: "MMM-Serial-Navigator"});
       selectedid = fselectedid();
-      if(input===self.config.serialCodes[0] || input===self.config.serialCodes[1]){
+      if(input===self.menuactionCodes.next || input===self.menuactionCodes['previous']){ // Menu actions "next" and "previous"
         vconfirm = 0;
 
-        if(input===self.config.serialCodes[0]){
+        if(input===self.menuactionCodes.next){
           navistep = 1;
           actionstep = 0;
-        }else if(input===self.config.serialCodes[1]){
+        }else if(input===self.menuactionCodes.previous){
           navistep = -1;
           actionstep = 1;
         }
 
         if(locked==true){
-          self.sendAction(self.config.Action[selectedid][parseInt(actionstep)]);
+          self.sendAction(self.getAction(input, self.state));
         }else if(locked==false){
           document.getElementsByTagName('li')[selectedid].setAttribute('class', '');//CW&CCW
           if(selectedid==0 && input===self.config.serialCodes[0]){//mark next row
             document.getElementsByTagName('li')[parseInt(selectedid)+1].setAttribute('class', 'selected');//CW
+            self.stateselected++;
           }else if(selectedid==0 && input===self.config.serialCodes[1]){//mark last row
-            document.getElementsByTagName('li')[self.config.Action.length-1].setAttribute('class', 'selected');//CCW
-          }else if(selectedid==self.config.Action.length-1 && input===self.config.serialCodes[0]){//mark first row
+            document.getElementsByTagName('li')[self.config.states.length-1].setAttribute('class', 'selected');//CCW
+            self.stateselected = self.config.states.length - 1;
+          }else if(selectedid==self.config.states.length-1 && input===self.config.serialCodes[0]){//mark first row
             document.getElementsByTagName('li')[0].setAttribute('class', 'selected');//CW
-          }else if(selectedid==self.config.Action.length-1 && input===self.config.serialCodes[1]){//mark prev row
+            self.stateselected = 0;
+          }else if(selectedid==self.config.states.length-1 && input===self.config.serialCodes[1]){//mark prev row
             document.getElementsByTagName('li')[parseInt(selectedid)-1].setAttribute('class', 'selected');//CCW
+            self.stateselected--;
           }else{//mark next one in selected direction
             document.getElementsByTagName('li')[parseInt(selectedid)+navistep].setAttribute('class', 'selected');
+            self.stateselected = self.stateselected + navistep;
           }
         }
-      }else if(input === self.config.serialCodes[2]){
+      }else if(input === self.menuactionCodes.lock){
         if(locked==false){//Menu not locked so ... (see below)
-          if(Array.isArray(self.config.Action[selectedid])){//if selected entry Action is array - lock it
+          var foundaction = self.getAction(input, self.config.states[self.stateselected]);
+          if(foundaction.notification == undefined){ // Menu can be locked, so do this
             locked = true;
+            self.state = self.config.states[self.stateselected];
             document.getElementsByTagName('li')[selectedid].setAttribute('class', 'selected locked fa-lock1');//axled lock icon
           }else{//if selected entry Action is object - so there is nothing to lock - execute it
-            self.show(0,{force: true, lockString: "MMM-Serial-Navigator"});
-            self.sendAction(self.config.Action[selectedid]);
+            if(!self.config.hideMenu) self.show(0,{force: true, lockString: "MMM-Serial-Navigator"});
+            self.sendAction(foundaction);
           }
         }else{//Menu locked so unlock it
           locked = false;
+          self.state = "GROUND_STATE";
           document.getElementsByTagName('li')[selectedid].setAttribute('class', 'selected');
         }
-      /*} else if(input === 'SW'){
-        if(locked==true){
-          if(self.config.Action[selectedid].length >= 3){
-            self.sendAction(self.config.Action[selectedid][2]);
-          }
-        }
-      }*/
       } else {
-        if(locked==true){
-          var index = self.config.serialCodes.indexOf(input);
-          if(index > 1) index--;
-          Log.log("code: "+input+"("+index+") / "+self.config.Action[selectedid].length);
-          if(index < self.config.Action[selectedid].length){
-            self.sendAction(self.config.Action[selectedid][index]);
-          }
+        var actionfound = self.getAction(input, self.state, stateless= true);
+        if(actionfound.notification != undefined) {
+          self.sendAction(actionfound);
         }
       }
     }
@@ -177,21 +299,17 @@ Module.register("MMM-Serial-Navigator", {
     if(this.config.serialCodes.indexOf(notification) != -1){
       this.naviaction({inputtype: notification});
     }
-    /*if(notification === 'BTN2'){
-      this.naviaction({inputtype: "PRESSED"});
-    } else if(notification === 'CW'){
-      this.naviaction({inputtype: "CW"});
-    } else if(notification === 'CCW'){
-      this.naviaction({inputtype: "CCW"});
-    } else if(notification === 'SW'){
-      this.naviaction({inputtype: "SW"});
-    }*/
   },
 
   notificationReceived: function(notification, payload, sender){
-    //Log.info("############### Serial Connector got notification: " + notification+" by sender " + sender);
-    if(notification === 'DOM_OBJECTS_CREATED'){
-      this.hide(10, { lockString: "MMM-Serial-Navigator" });
+    switch(notification){
+      case 'DOM_OBJECTS_CREATED':
+        this.hide(10, { lockString: "MMM-Serial-Navigator" });
+        break;
+      case 'WRITE_TO_SERIAL':
+        if(payload.data == undefined) break;
+        this.sendSocketNotification('WRITE_TO_SERIAL',payload);
+        break;
     }
   },
 });
