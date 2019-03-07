@@ -6,6 +6,8 @@ The menu can be permanently hidden, to simply provide a simple interface between
 
 The communication protocol is line based. Every command from the serial interface should be a seperate line. It does not matter, what line ending you use (line feed, carriage return or both). When you use the `WRITE_TO_SERIAL` notification, a line feed character ("\n") is appended to the data.
 
+For providing the menu I started with the MMM-Navigate module of Ax-LED (https://github.com/Ax-LED/MMM-Navigate). I copied the code and changed it, until it suited my needs. 
+
 ## Images
 
 ## Installation
